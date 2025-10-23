@@ -16,12 +16,12 @@
 
   <div class="card">
     <h2>Klasse</h2>
-    <p><a href="klasse.php">Administrer klasser (registrer, vis, slett)</a></p>
+    <p><a href="klasse.php">Administrer klasser </a></p>
   </div>
 
   <div class="card">
     <h2>Student</h2>
-    <p><a href="student.php">Administrer studenter (registrer, vis, slett)</a></p>
+    <p><a href="student.php">Administrer studenter </a></p>
   </div>
 </body>
 </html>
