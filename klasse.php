@@ -31,29 +31,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['registrer'])) {
     }
 }
 
+
 // ---------------- Slett klasse (POST) ----------------
 if (isset($_POST['slett'])) {
-    $kode = trim($_POST['slett']);
+  $kode = trim($_POST['slett']);
 
-    $stmt = $conn->prepare("DELETE FROM klasse WHERE klassekode = ?");
-    $stmt->bind_param("s", $kode);
+  $stmt = $conn->prepare("DELETE FROM klasse WHERE klassekode = ?");
+  $stmt->bind_param("s", $kode);
 
-    if ($stmt->execute()) {
-        if ($stmt->affected_rows > 0) {
-            $message = "🗑️ Klassen «{$kode}» ble slettet.";
-        } else {
-            $message = "ℹ️ Fant ingen klasse med kode «{$kode}».";
-        }
-    } else {
-        if ($stmt->errno == 1451) { // FK: studenter peker på denne klassen
-            $message = "❌ Kan ikke slette «{$kode}»: Det finnes studenter i denne klassen. "
-                     . "Flytt eller slett studentene først.";
-        } else {
-            $message = "❌ Feil under sletting ({$stmt->errno}): " . htmlspecialchars($stmt->error);
-        }
-    }
-    $stmt->close();
+  try {
+      $stmt->execute();
+
+      if ($stmt->affected_rows > 0) {
+          $message = "🗑️ Klassen «{$kode}» ble slettet.";
+      } else {
+          $message = "ℹ️ Fant ingen klasse med kode «{$kode}».";
+      }
+
+  } catch (mysqli_sql_exception $e) {
+      // 1451 = foreign key constraint (studenter peker på klassen)
+      if ((int)$e->getCode() === 1451) {
+          $message = "❌ Kan ikke slette «{$kode}»: Det finnes studenter i denne klassen. "
+                   . "Flytt eller slett studentene først.";
+      } else {
+          $message = "❌ Feil under sletting ({$e->getCode()}): "
+                   . htmlspecialchars($e->getMessage());
+      }
+  } finally {
+      $stmt->close();
+  }
 }
+
 
 // ---------------- Hent alle klasser ----------------
 $klasser = [];
