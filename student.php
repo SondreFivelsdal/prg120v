@@ -162,10 +162,11 @@ if ($res) {
                 <td><?= htmlspecialchars($s['klassekode']) ?></td>
                 <td><?= htmlspecialchars($s['klassenavn'] ?? '') ?></td>
                 <td>
-                    <a href="?slett=<?= urlencode($s['brukernavn']) ?>"
-                       onclick="return confirm('Slette student «<?= htmlspecialchars($s['brukernavn']) ?>»?');">
-                        Slett
-                    </a>
+                  <a href="student.php?slett=<?= urlencode($s['brukernavn']) ?>"
+                    onclick="return confirm('Slette studenten «<?= htmlspecialchars($s['brukernavn']) ?>»?');">
+                    Slett
+                  </a>
+
                 </td>
             </tr>
         <?php endforeach; ?>
