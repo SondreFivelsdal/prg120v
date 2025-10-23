@@ -1,131 +1,178 @@
 <?php
-// student.php – CRUD for tabellen "student"
+// student.php — administrasjon av studenter
 require_once 'db_connection.php';
 
-// Hent klasser til nedtrekksliste (listeboks)
+$message = '';
+
+// ---------------- Hent klasser til nedtrekk ----------------
 $klasser = [];
-$r = $conn->query("SELECT klassekode, klassenavn FROM klasse ORDER BY klassekode");
-if ($r) {
-    while ($row = $r->fetch_assoc()) { $klasser[] = $row; }
-    $r->close();
+$resK = $conn->query("SELECT klassekode, klassenavn FROM klasse ORDER BY klassekode");
+if ($resK) {
+    while ($row = $resK->fetch_assoc()) {
+        $klasser[] = $row;
+    }
+    $resK->close();
 }
 
-// Registrer ny student (POST)
+// ---------------- Registrer ny student ----------------
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['registrer'])) {
-    $brukernavn = trim($_POST['brukernavn'] ?? '');
-    $fornavn    = trim($_POST['fornavn'] ?? '');
-    $etternavn  = trim($_POST['etternavn'] ?? '');
-    $klassekode = trim($_POST['klassekode'] ?? '');
+    $bn   = trim($_POST['brukernavn'] ?? '');
+    $fn   = trim($_POST['fornavn'] ?? '');
+    $en   = trim($_POST['etternavn'] ?? '');
+    $kk   = trim($_POST['klassekode'] ?? '');
 
-    if ($brukernavn !== '' && $fornavn !== '' && $etternavn !== '' && $klassekode !== '') {
-        $stmt = $conn->prepare("INSERT INTO student (brukernavn, fornavn, etternavn, klassekode) VALUES (?, ?, ?, ?)");
-        $stmt->bind_param("ssss", $brukernavn, $fornavn, $etternavn, $klassekode);
-        if ($stmt->execute()) {
-            $message = "✅ Student registrert!";
+    if ($bn !== '' && $fn !== '' && $en !== '' && $kk !== '') {
+
+        // Sjekk at klassekode finnes (brukervennlig tilbakemelding)
+        $stmtK = $conn->prepare("SELECT 1 FROM klasse WHERE klassekode = ?");
+        $stmtK->bind_param("s", $kk);
+        $stmtK->execute();
+        $stmtK->store_result();
+        $klasseFinnes = $stmtK->num_rows > 0;
+        $stmtK->close();
+
+        if (!$klasseFinnes) {
+            $message = "❌ Klassen «{$kk}» finnes ikke. Velg en gyldig klassekode.";
         } else {
-            $message = "⚠️ Feil ved registrering: " . htmlspecialchars($stmt->error);
+            $stmt = $conn->prepare(
+                "INSERT INTO student (brukernavn, fornavn, etternavn, klassekode) VALUES (?, ?, ?, ?)"
+            );
+            $stmt->bind_param("ssss", $bn, $fn, $en, $kk);
+
+            if ($stmt->execute()) {
+                $message = "✅ Student «{$bn}» ble registrert.";
+            } else {
+                if ($stmt->errno == 1062) { // brukernavn duplikat
+                    $message = "❌ Brukernavnet «{$bn}» finnes allerede. Velg et annet.";
+                } elseif ($stmt->errno == 1452) { // FK feilet (klasse finnes ikke)
+                    $message = "❌ Klassen «{$kk}» finnes ikke. Velg en gyldig klassekode.";
+                } else {
+                    $message = "❌ Feil ved registrering ({$stmt->errno}): " . htmlspecialchars($stmt->error);
+                }
+            }
+            $stmt->close();
         }
-        $stmt->close();
     } else {
-        $message = "⚠️ Alle felter må fylles ut.";
+        $message = "❌ Alle felter må fylles ut.";
     }
 }
 
-// Slett student (GET ?slett=brukernavn)
+// ---------------- Slett student ----------------
 if (isset($_GET['slett'])) {
-    $bn = $_GET['slett'];
+    $bn = trim($_GET['slett']);
+
     $stmt = $conn->prepare("DELETE FROM student WHERE brukernavn = ?");
     $stmt->bind_param("s", $bn);
+
     if ($stmt->execute()) {
         if ($stmt->affected_rows > 0) {
-            $message = "🗑️ Student '$bn' ble slettet.";
+            $message = "🗑️ Student «{$bn}» ble slettet.";
         } else {
-            $message = "⚠️ Fant ingen student med brukernavn '$bn'.";
+            $message = "ℹ️ Fant ingen student med brukernavn «{$bn}».";
         }
     } else {
-        $message = "⚠️ Kunne ikke slette: " . htmlspecialchars($stmt->error);
+        $message = "❌ Feil under sletting ({$stmt->errno}): " . htmlspecialchars($stmt->error);
     }
     $stmt->close();
 }
 
-// Hent alle studenter (JOIN for å vise klassenavn)
+// ---------------- Hent alle studenter (med klassenavn) ----------------
 $studenter = [];
-$sql = "SELECT s.brukernavn, s.fornavn, s.etternavn, s.klassekode, k.klassenavn
-        FROM student s
-        JOIN klasse k ON k.klassekode = s.klassekode
-        ORDER BY s.brukernavn";
-$res = $conn->query($sql);
+$sqlList = "
+    SELECT s.brukernavn, s.fornavn, s.etternavn, s.klassekode, k.klassenavn
+    FROM student s
+    LEFT JOIN klasse k ON k.klassekode = s.klassekode
+    ORDER BY s.brukernavn
+";
+$res = $conn->query($sqlList);
 if ($res) {
-    while ($row = $res->fetch_assoc()) { $studenter[] = $row; }
+    while ($row = $res->fetch_assoc()) {
+        $studenter[] = $row;
+    }
     $res->close();
 }
 ?>
 <!DOCTYPE html>
 <html lang="no">
 <head>
-  <meta charset="UTF-8" />
-  <title>Administrer studenter</title>
-  <style>
-    body { font-family: Arial, sans-serif; margin: 40px; }
-    table { border-collapse: collapse; margin-top: 16px; min-width: 700px; }
-    th, td { border: 1px solid #ddd; padding: 8px 12px; }
-    th { background: #f5f5f5; }
-    .msg { margin: 12px 0; }
-    a { text-decoration: none; }
-  </style>
+    <meta charset="UTF-8">
+    <title>Administrer studenter</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; }
+        table { border-collapse: collapse; margin-top: 16px; min-width: 680px; }
+        th, td { border: 1px solid #ddd; padding: 8px 12px; }
+        th { background: #f5f5f5; }
+        .msg { margin: 16px 0; font-weight: bold; }
+        a { text-decoration: none; }
+    </style>
 </head>
 <body>
-  <h1>Studenter</h1>
-  <p><a href="index.php">← Tilbake til meny</a></p>
 
-  <?php if (!empty($message)): ?>
-    <div class="msg"><?= htmlspecialchars($message) ?></div>
-  <?php endif; ?>
+<h1>Studenter</h1>
+<p><a href="index.php">Tilbake til meny</a> | <a href="klasse.php">Gå til klasser</a></p>
 
-  <h2>Registrer ny student</h2>
-  <form method="post">
-    <label>Brukernavn:
-      <input type="text" name="brukernavn" maxlength="7" required />
-    </label><br><br>
-    <label>Fornavn:
-      <input type="text" name="fornavn" maxlength="50" required />
-    </label><br><br>
-    <label>Etternavn:
-      <input type="text" name="etternavn" maxlength="50" required />
-    </label><br><br>
+<?php if (!empty($message)): ?>
+    <div class="msg"><?= $message ?></div>
+<?php endif; ?>
 
-    <label>Klasse:
-      <select name="klassekode" required>
-        <option value="">Velg klasse</option>
-        <?php foreach ($klasser as $k): ?>
-          <option value="<?= htmlspecialchars($k['klassekode']) ?>">
-            <?= htmlspecialchars($k['klassekode'] . ' — ' . $k['klassenavn']) ?>
-          </option>
+<h2>Registrer ny student</h2>
+<form method="post">
+    <label>
+        Brukernavn:
+        <input type="text" name="brukernavn" maxlength="50" required>
+    </label><br><br>
+    <label>
+        Fornavn:
+        <input type="text" name="fornavn" maxlength="100" required>
+    </label><br><br>
+    <label>
+        Etternavn:
+        <input type="text" name="etternavn" maxlength="100" required>
+    </label><br><br>
+    <label>
+        Klasse:
+        <select name="klassekode" required>
+            <option value="">— Velg klasse —</option>
+            <?php foreach ($klasser as $k): ?>
+                <option value="<?= htmlspecialchars($k['klassekode']) ?>">
+                    <?= htmlspecialchars($k['klassekode']) ?> — <?= htmlspecialchars($k['klassenavn']) ?>
+                </option>
+            <?php endforeach; ?>
+        </select>
+    </label><br><br>
+    <input type="submit" name="registrer" value="Registrer">
+</form>
+
+<h2>Alle studenter</h2>
+<table>
+    <tr>
+        <th>Brukernavn</th>
+        <th>Fornavn</th>
+        <th>Etternavn</th>
+        <th>Klassekode</th>
+        <th>Klassenavn</th>
+        <th>Handling</th>
+    </tr>
+    <?php if (!empty($studenter)): ?>
+        <?php foreach ($studenter as $s): ?>
+            <tr>
+                <td><?= htmlspecialchars($s['brukernavn']) ?></td>
+                <td><?= htmlspecialchars($s['fornavn']) ?></td>
+                <td><?= htmlspecialchars($s['etternavn']) ?></td>
+                <td><?= htmlspecialchars($s['klassekode']) ?></td>
+                <td><?= htmlspecialchars($s['klassenavn'] ?? '') ?></td>
+                <td>
+                    <a href="?slett=<?= urlencode($s['brukernavn']) ?>"
+                       onclick="return confirm('Slette student «<?= htmlspecialchars($s['brukernavn']) ?>»?');">
+                        Slett
+                    </a>
+                </td>
+            </tr>
         <?php endforeach; ?>
-      </select>
-    </label><br><br>
-
-    <button type="submit" name="registrer">Registrer</button>
-  </form>
-
-  <h2>Alle studenter</h2>
-  <table>
-    <tr><th>Brukernavn</th><th>Fornavn</th><th>Etternavn</th><th>Klassekode</th><th>Klassenavn</th><th>Handling</th></tr>
-    <?php foreach ($studenter as $s): ?>
-      <tr>
-        <td><?= htmlspecialchars($s['brukernavn']) ?></td>
-        <td><?= htmlspecialchars($s['fornavn']) ?></td>
-        <td><?= htmlspecialchars($s['etternavn']) ?></td>
-        <td><?= htmlspecialchars($s['klassekode']) ?></td>
-        <td><?= htmlspecialchars($s['klassenavn']) ?></td>
-        <td>
-          <a href="?slett=<?= urlencode($s['brukernavn']) ?>" onclick="return confirm('Slette student?');">Slett</a>
-        </td>
-      </tr>
-    <?php endforeach; ?>
-    <?php if (empty($studenter)): ?>
-      <tr><td colspan="6">Ingen studenter registrert ennå.</td></tr>
+    <?php else: ?>
+        <tr><td colspan="6">Ingen studenter registrert ennå.</td></tr>
     <?php endif; ?>
-  </table>
+</table>
+
 </body>
 </html>
