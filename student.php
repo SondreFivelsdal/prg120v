@@ -14,16 +14,15 @@ if ($resK) {
     $resK->close();
 }
 
-// ---------------- Registrer ny student ----------------
+// ---------------- Registrer ny student (POST) ----------------
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['registrer'])) {
-    $bn   = trim($_POST['brukernavn'] ?? '');
-    $fn   = trim($_POST['fornavn'] ?? '');
-    $en   = trim($_POST['etternavn'] ?? '');
-    $kk   = trim($_POST['klassekode'] ?? '');
+    $bn = trim($_POST['brukernavn'] ?? '');
+    $fn = trim($_POST['fornavn'] ?? '');
+    $en = trim($_POST['etternavn'] ?? '');
+    $kk = trim($_POST['klassekode'] ?? '');
 
     if ($bn !== '' && $fn !== '' && $en !== '' && $kk !== '') {
-
-        // Sjekk at klassekode finnes (brukervennlig tilbakemelding)
+        // Sjekk at klassekode finnes
         $stmtK = $conn->prepare("SELECT 1 FROM klasse WHERE klassekode = ?");
         $stmtK->bind_param("s", $kk);
         $stmtK->execute();
@@ -42,9 +41,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['registrer'])) {
             if ($stmt->execute()) {
                 $message = "✅ Student «{$bn}» ble registrert.";
             } else {
-                if ($stmt->errno == 1062) { // brukernavn duplikat
+                if ($stmt->errno == 1062) {
                     $message = "❌ Brukernavnet «{$bn}» finnes allerede. Velg et annet.";
-                } elseif ($stmt->errno == 1452) { // FK feilet (klasse finnes ikke)
+                } elseif ($stmt->errno == 1452) {
                     $message = "❌ Klassen «{$kk}» finnes ikke. Velg en gyldig klassekode.";
                 } else {
                     $message = "❌ Feil ved registrering ({$stmt->errno}): " . htmlspecialchars($stmt->error);
@@ -57,9 +56,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['registrer'])) {
     }
 }
 
-// ---------------- Slett student ----------------
-if (isset($_GET['slett'])) {
-    $bn = trim($_GET['slett']);
+// ---------------- Slett student (POST) ----------------
+if (isset($_POST['slett'])) {
+    $bn = trim($_POST['slett']);
 
     $stmt = $conn->prepare("DELETE FROM student WHERE brukernavn = ?");
     $stmt->bind_param("s", $bn);
@@ -104,6 +103,7 @@ if ($res) {
         th { background: #f5f5f5; }
         .msg { margin: 16px 0; font-weight: bold; }
         a { text-decoration: none; }
+        button.link { background:none;border:none;color:#06c;cursor:pointer;padding:0; }
     </style>
 </head>
 <body>
@@ -162,11 +162,12 @@ if ($res) {
                 <td><?= htmlspecialchars($s['klassekode']) ?></td>
                 <td><?= htmlspecialchars($s['klassenavn'] ?? '') ?></td>
                 <td>
-                  <a href="student.php?slett=<?= urlencode($s['brukernavn']) ?>"
-                    onclick="return confirm('Slette studenten «<?= htmlspecialchars($s['brukernavn']) ?>»?');">
-                    Slett
-                  </a>
-
+                    <form method="post" action="student.php"
+                          onsubmit="return confirm('Slette studenten «<?= htmlspecialchars($s['brukernavn']) ?>»?');"
+                          style="display:inline">
+                        <input type="hidden" name="slett" value="<?= htmlspecialchars($s['brukernavn']) ?>">
+                        <button type="submit" class="link">Slett</button>
+                    </form>
                 </td>
             </tr>
         <?php endforeach; ?>

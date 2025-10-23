@@ -1,10 +1,10 @@
 <?php
 // klasse.php — administrasjon av klasser
-require_once 'db_connection.php'; // bruker samme kobling som du allerede har
+require_once 'db_connection.php';
 
-$message = ''; // melding som vises i toppen
+$message = '';
 
-// ---------------- Registrer ny klasse ----------------
+// ---------------- Registrer ny klasse (POST) ----------------
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['registrer'])) {
     $kode    = trim($_POST['klassekode'] ?? '');
     $navn    = trim($_POST['klassenavn'] ?? '');
@@ -19,8 +19,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['registrer'])) {
         if ($stmt->execute()) {
             $message = "✅ Klasse «{$kode}» ble registrert.";
         } else {
-            // Gi brukervennlige feilmeldinger
-            if ($stmt->errno == 1062) { // 1062 = duplikatnøkkel
+            if ($stmt->errno == 1062) {
                 $message = "❌ Klassekoden «{$kode}» finnes allerede. Velg en annen kode.";
             } else {
                 $message = "❌ Feil ved registrering ({$stmt->errno}): " . htmlspecialchars($stmt->error);
@@ -32,9 +31,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['registrer'])) {
     }
 }
 
-// ---------------- Slett klasse ----------------
-if (isset($_GET['slett'])) {
-    $kode = trim($_GET['slett']);
+// ---------------- Slett klasse (POST) ----------------
+if (isset($_POST['slett'])) {
+    $kode = trim($_POST['slett']);
 
     $stmt = $conn->prepare("DELETE FROM klasse WHERE klassekode = ?");
     $stmt->bind_param("s", $kode);
@@ -46,8 +45,7 @@ if (isset($_GET['slett'])) {
             $message = "ℹ️ Fant ingen klasse med kode «{$kode}».";
         }
     } else {
-        // 1451 = fremmednøkkel-brudd (studenter peker på klassen)
-        if ($stmt->errno == 1451) {
+        if ($stmt->errno == 1451) { // FK: studenter peker på denne klassen
             $message = "❌ Kan ikke slette «{$kode}»: Det finnes studenter i denne klassen. "
                      . "Flytt eller slett studentene først.";
         } else {
@@ -67,7 +65,6 @@ if ($res) {
     $res->close();
 }
 ?>
-
 <!DOCTYPE html>
 <html lang="no">
 <head>
@@ -80,9 +77,7 @@ if ($res) {
         th { background: #f5f5f5; }
         .msg { margin: 16px 0; font-weight: bold; }
         a { text-decoration: none; }
-        .success { color: green; }
-        .error { color: red; }
-        .info { color: #333; }
+        button.link { background:none;border:none;color:#c00;cursor:pointer;padding:0; }
     </style>
 </head>
 <body>
@@ -126,10 +121,12 @@ if ($res) {
                 <td><?= htmlspecialchars($k['klassenavn']) ?></td>
                 <td><?= htmlspecialchars($k['studiumkode']) ?></td>
                 <td>
-                    <a href="?slett=<?= urlencode($k['klassekode']) ?>"
-                       onclick="return confirm('Slette klassen «<?= htmlspecialchars($k['klassekode']) ?>»?');">
-                       Slett
-                    </a>
+                    <form method="post" action="klasse.php"
+                          onsubmit="return confirm('Slette klassen «<?= htmlspecialchars($k['klassekode']) ?>»?');"
+                          style="display:inline">
+                        <input type="hidden" name="slett" value="<?= htmlspecialchars($k['klassekode']) ?>">
+                        <button type="submit" class="link">Slett</button>
+                    </form>
                 </td>
             </tr>
         <?php endforeach; ?>
