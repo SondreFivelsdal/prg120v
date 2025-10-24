@@ -1,7 +1,6 @@
 <?php
 // klasse.php – CRUD for tabellen "klasse"
-// Funksjoner: Registrering, visning og sletting
-// Nå med robust sletting (lenke peker eksplisitt til denne siden)
+// Funksjoner: Registrer, vis og slett (sletting via POST for robusthet)
 
 require_once 'db_connection.php';
 
@@ -16,7 +15,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['registrer'])) {
     $studium = trim($_POST['studiumkode'] ?? '');
 
     if ($kode !== '' && $navn !== '' && $studium !== '') {
-        // Sjekk om klassekode finnes allerede
+        // Sjekk om klassekode finnes fra før
         $chk = $conn->prepare("SELECT 1 FROM klasse WHERE klassekode = ?");
         $chk->bind_param("s", $kode);
         $chk->execute();
@@ -29,12 +28,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['registrer'])) {
             $stmt->bind_param("sss", $kode, $navn, $studium);
             if ($stmt->execute()) {
                 $message = "✅ Klasse «" . htmlspecialchars($kode) . "» ble registrert.";
-                $_POST = []; // Tøm felter
+                $_POST = []; // tøm feltene
             } else {
                 if ($stmt->errno == 1062) {
                     $message = "⚠️ Klassekode «" . htmlspecialchars($kode) . "» finnes allerede.";
                 } else {
-                    $message = "⚠️ Feil ved registrering: " . htmlspecialchars($stmt->error);
+                    $message = "⚠️ Feil ved registrering: (" . $stmt->errno . ") " . htmlspecialchars($stmt->error);
                 }
             }
             $stmt->close();
@@ -46,10 +45,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['registrer'])) {
 }
 
 // =========================
-// 2) Sletting av klasse
+// 2) Sletting av klasse (POST)
 // =========================
-if (isset($_GET['slett'])) {
-    $kode = $_GET['slett'];
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['slett'])) {
+    $kode = $_POST['slett'];
 
     $del = $conn->prepare("DELETE FROM klasse WHERE klassekode = ?");
     $del->bind_param("s", $kode);
@@ -61,7 +60,9 @@ if (isset($_GET['slett'])) {
             $message = "⚠️ Fant ingen klasse med kode «" . htmlspecialchars($kode) . "».";
         }
     } else {
-        $message = "⚠️ Kunne ikke slette klassen. Slett studenter i klassen først.";
+        // Vis konkret DB-feil (typisk fremmednøkkel)
+        $message = "⚠️ Kunne ikke slette «" . htmlspecialchars($kode) . "»: (" . $del->errno . ") " . htmlspecialchars($del->error) .
+                   "<br>Tips: Slett eventuelle studenter i denne klassen først.";
     }
     $del->close();
 }
@@ -72,13 +73,11 @@ if (isset($_GET['slett'])) {
 $klasser = [];
 $res = $conn->query("SELECT klassekode, klassenavn, studiumkode FROM klasse ORDER BY klassekode");
 if ($res) {
-    while ($row = $res->fetch_assoc()) {
-        $klasser[] = $row;
-    }
+    while ($row = $res->fetch_assoc()) { $klasser[] = $row; }
     $res->close();
 }
 
-// For å vise verdier etter mislykket submit
+// Re-populer felter ved valideringsfeil
 $valKode    = htmlspecialchars($_POST['klassekode'] ?? '', ENT_QUOTES);
 $valNavn    = htmlspecialchars($_POST['klassenavn'] ?? '', ENT_QUOTES);
 $valStudium = htmlspecialchars($_POST['studiumkode'] ?? '', ENT_QUOTES);
@@ -104,7 +103,7 @@ $valStudium = htmlspecialchars($_POST['studiumkode'] ?? '', ENT_QUOTES);
     table { border-collapse: collapse; margin-top: 18px; min-width: 640px; }
     th, td { border: 1px solid #e5e7eb; padding: 10px 12px; }
     th { background: #f5f5f5; text-align: left; }
-    .danger { color:#dc2626; }
+    .danger { color:#dc2626; background:none; border:none; cursor:pointer; }
   </style>
 </head>
 <body>
@@ -112,13 +111,13 @@ $valStudium = htmlspecialchars($_POST['studiumkode'] ?? '', ENT_QUOTES);
   <p><a href="index.php">← Tilbake til meny</a></p>
 
   <?php if ($message): ?>
-    <div class="msg <?= str_starts_with($message, '✅') ? 'ok' : 'warn' ?>">
+    <div class="msg <?= str_starts_with(strip_tags($message), '✅') ? 'ok' : 'warn' ?>">
       <?= $message ?>
     </div>
   <?php endif; ?>
 
   <h2>Registrer ny klasse</h2>
-  <form method="post">
+  <form method="post" action="klasse.php">
     <label for="klassekode">Klassekode:</label>
     <input type="text" id="klassekode" name="klassekode" maxlength="5" value="<?= $valKode ?>" required />
 
@@ -149,11 +148,11 @@ $valStudium = htmlspecialchars($_POST['studiumkode'] ?? '', ENT_QUOTES);
           <td><?= htmlspecialchars($k['klassenavn']) ?></td>
           <td><?= htmlspecialchars($k['studiumkode']) ?></td>
           <td>
-            <!-- Viktig: peker nå eksplisitt til klasse.php -->
-            <a class="danger" href="klasse.php?slett=<?= urlencode($k['klassekode']) ?>"
-               onclick="return confirm('Slette klassen «<?= htmlspecialchars($k['klassekode']) ?>»?');">
-               Slett
-            </a>
+            <!-- Slett via POST-skjema for robusthet -->
+            <form method="post" action="klasse.php" onsubmit="return confirm('Slette klassen «<?= htmlspecialchars($k['klassekode']) ?>»?');" style="display:inline">
+              <input type="hidden" name="slett" value="<?= htmlspecialchars($k['klassekode']) ?>">
+              <button type="submit" class="danger">Slett</button>
+            </form>
           </td>
         </tr>
       <?php endforeach; ?>
@@ -161,3 +160,4 @@ $valStudium = htmlspecialchars($_POST['studiumkode'] ?? '', ENT_QUOTES);
   </table>
 </body>
 </html>
+
