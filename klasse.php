@@ -1,69 +1,83 @@
 <?php
-// klasse.php — administrasjon av klasser
+// klasse.php – CRUD for tabellen "klasse"
+// - Registrer ny klasse (POST)
+// - Vis alle klasser (SELECT)
+// - Slett klasse (GET ?slett=KODE)
+// Bruker prepared statements og viser vennlige feilmeldinger.
+
 require_once 'db_connection.php';
 
-$message = '';
+$message = ""; // Meldingsfelt til UI
 
-// ---------------- Registrer ny klasse (POST) ----------------
+// =========================
+// 1) Registrering av klasse
+// =========================
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['registrer'])) {
+    // Les og trim input
     $kode    = trim($_POST['klassekode'] ?? '');
     $navn    = trim($_POST['klassenavn'] ?? '');
     $studium = trim($_POST['studiumkode'] ?? '');
 
     if ($kode !== '' && $navn !== '' && $studium !== '') {
-        $stmt = $conn->prepare(
-            "INSERT INTO klasse (klassekode, klassenavn, studiumkode) VALUES (?, ?, ?)"
-        );
-        $stmt->bind_param("sss", $kode, $navn, $studium);
+        // a) Sjekk om klassekode finnes allerede (unngå fatal "duplicate key")
+        $chk = $conn->prepare("SELECT 1 FROM klasse WHERE klassekode = ?");
+        $chk->bind_param("s", $kode);
+        $chk->execute();
+        $chk->store_result();
 
-        if ($stmt->execute()) {
-            $message = "✅ Klasse «{$kode}» ble registrert.";
+        if ($chk->num_rows > 0) {
+            // Finnes fra før
+            $message = "⚠️ Klassekode «" . htmlspecialchars($kode) . "» finnes allerede.";
         } else {
-            if ($stmt->errno == 1062) {
-                $message = "❌ Klassekoden «{$kode}» finnes allerede. Velg en annen kode.";
+            // b) Sett inn ny rad
+            $stmt = $conn->prepare("INSERT INTO klasse (klassekode, klassenavn, studiumkode) VALUES (?, ?, ?)");
+            $stmt->bind_param("sss", $kode, $navn, $studium);
+
+            if ($stmt->execute()) {
+                $message = "✅ Klasse «" . htmlspecialchars($kode) . "» ble registrert.";
+                // Tøm feltene i skjemaet etter vellykket registrering
+                $_POST['klassekode'] = $_POST['klassenavn'] = $_POST['studiumkode'] = '';
             } else {
-                $message = "❌ Feil ved registrering ({$stmt->errno}): " . htmlspecialchars($stmt->error);
+                // Skulle det skje en feil, vises den på en trygg måte
+                if ($stmt->errno == 1062) {
+                    $message = "⚠️ Klassekode «" . htmlspecialchars($kode) . "» finnes allerede.";
+                } else {
+                    $message = "⚠️ Feil ved registrering: " . htmlspecialchars($stmt->error);
+                }
             }
+            $stmt->close();
         }
-        $stmt->close();
+        $chk->close();
     } else {
-        $message = "❌ Alle felter må fylles ut.";
+        $message = "⚠️ Alle felter må fylles ut.";
     }
 }
 
+// =========================
+// 2) Sletting av klasse
+// =========================
+if (isset($_GET['slett'])) {
+    $kode = $_GET['slett'];
 
-// ---------------- Slett klasse (POST) ----------------
-if (isset($_POST['slett'])) {
-  $kode = trim($_POST['slett']);
+    $del = $conn->prepare("DELETE FROM klasse WHERE klassekode = ?");
+    $del->bind_param("s", $kode);
 
-  $stmt = $conn->prepare("DELETE FROM klasse WHERE klassekode = ?");
-  $stmt->bind_param("s", $kode);
-
-  try {
-      $stmt->execute();
-
-      if ($stmt->affected_rows > 0) {
-          $message = "🗑️ Klassen «{$kode}» ble slettet.";
-      } else {
-          $message = "ℹ️ Fant ingen klasse med kode «{$kode}».";
-      }
-
-  } catch (mysqli_sql_exception $e) {
-      // 1451 = foreign key constraint (studenter peker på klassen)
-      if ((int)$e->getCode() === 1451) {
-          $message = "❌ Kan ikke slette «{$kode}»: Det finnes studenter i denne klassen. "
-                   . "Flytt eller slett studentene først.";
-      } else {
-          $message = "❌ Feil under sletting ({$e->getCode()}): "
-                   . htmlspecialchars($e->getMessage());
-      }
-  } finally {
-      $stmt->close();
-  }
+    if ($del->execute()) {
+        if ($del->affected_rows > 0) {
+            $message = "🗑️ Klassen «" . htmlspecialchars($kode) . "» ble slettet.";
+        } else {
+            $message = "⚠️ Fant ingen klasse med kode «" . htmlspecialchars($kode) . "».";
+        }
+    } else {
+        // Feiler ofte pga. fremmednøkkel hvis studenter peker på denne klassen
+        $message = "⚠️ Kunne ikke slette klassen. Slett studenter i klassen først.";
+    }
+    $del->close();
 }
 
-
-// ---------------- Hent alle klasser ----------------
+// =========================
+// 3) Hent alle klasser (visning)
+// =========================
 $klasser = [];
 $res = $conn->query("SELECT klassekode, klassenavn, studiumkode FROM klasse ORDER BY klassekode");
 if ($res) {
@@ -72,76 +86,86 @@ if ($res) {
     }
     $res->close();
 }
+
+// For repopulering av felter etter submit (hvis valideringsfeil)
+$valKode    = htmlspecialchars($_POST['klassekode'] ?? '', ENT_QUOTES);
+$valNavn    = htmlspecialchars($_POST['klassenavn'] ?? '', ENT_QUOTES);
+$valStudium = htmlspecialchars($_POST['studiumkode'] ?? '', ENT_QUOTES);
 ?>
 <!DOCTYPE html>
 <html lang="no">
 <head>
-    <meta charset="UTF-8">
-    <title>Administrer klasser</title>
-    <style>
-        body { font-family: Arial, sans-serif; margin: 40px; }
-        table { border-collapse: collapse; margin-top: 16px; min-width: 520px; }
-        th, td { border: 1px solid #ddd; padding: 8px 12px; }
-        th { background: #f5f5f5; }
-        .msg { margin: 16px 0; font-weight: bold; }
-        a { text-decoration: none; }
-        button.link { background:none;border:none;color:#c00;cursor:pointer;padding:0; }
-    </style>
+  <meta charset="UTF-8" />
+  <title>Klasser</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 40px; color:#222; }
+    a { text-decoration: none; color: #5b21b6; }
+    a:hover { text-decoration: underline; }
+    h1 { font-size: 42px; margin-bottom: 8px; }
+    h2 { margin-top: 28px; }
+    .msg { margin: 12px 0 20px; }
+    .ok { color: #057a35; }
+    .warn { color: #b91c1c; }
+    label { display: block; margin: 10px 0 4px; font-weight: 600; }
+    input[type="text"] { padding: 8px 10px; width: 280px; border:1px solid #ccc; border-radius:6px; }
+    button { margin-top: 12px; padding: 8px 14px; border:0; background:#111827; color:#fff; border-radius:6px; cursor:pointer; }
+    button:hover { background:#0b1220; }
+    table { border-collapse: collapse; margin-top: 18px; min-width: 640px; }
+    th, td { border: 1px solid #e5e7eb; padding: 10px 12px; }
+    th { background: #f5f5f5; text-align: left; }
+    .danger { color:#dc2626; }
+  </style>
 </head>
 <body>
+  <h1>Klasser</h1>
+  <p><a href="index.php">← Tilbake til meny</a></p>
 
-<h1>Klasser</h1>
-<p><a href="index.php">Tilbake til meny</a></p>
+  <?php if ($message): ?>
+    <div class="msg <?= str_starts_with($message, '✅') ? 'ok' : 'warn' ?>">
+      <?= $message ?>
+    </div>
+  <?php endif; ?>
 
-<?php if (!empty($message)): ?>
-    <div class="msg"><?= $message ?></div>
-<?php endif; ?>
+  <h2>Registrer ny klasse</h2>
+  <form method="post">
+    <label for="klassekode">Klassekode:</label>
+    <input type="text" id="klassekode" name="klassekode" maxlength="5" value="<?= $valKode ?>" required />
 
-<h2>Registrer ny klasse</h2>
-<form method="post">
-    <label>
-        Klassekode:
-        <input type="text" name="klassekode" maxlength="5" required>
-    </label><br><br>
-    <label>
-        Klassenavn:
-        <input type="text" name="klassenavn" maxlength="50" required>
-    </label><br><br>
-    <label>
-        Studiumkode:
-        <input type="text" name="studiumkode" maxlength="50" required>
-    </label><br><br>
-    <input type="submit" name="registrer" value="Registrer">
-</form>
+    <label for="klassenavn">Klassenavn:</label>
+    <input type="text" id="klassenavn" name="klassenavn" maxlength="50" value="<?= $valNavn ?>" required />
 
-<h2>Alle klasser</h2>
-<table>
+    <label for="studiumkode">Studiumkode:</label>
+    <input type="text" id="studiumkode" name="studiumkode" maxlength="50" value="<?= $valStudium ?>" required />
+
+    <br/>
+    <button type="submit" name="registrer">Registrer</button>
+  </form>
+
+  <h2>Alle klasser</h2>
+  <table>
     <tr>
-        <th>Kode</th>
-        <th>Navn</th>
-        <th>Studium</th>
-        <th>Handling</th>
+      <th>Kode</th>
+      <th>Navn</th>
+      <th>Studium</th>
+      <th>Handling</th>
     </tr>
-    <?php if (!empty($klasser)): ?>
-        <?php foreach ($klasser as $k): ?>
-            <tr>
-                <td><?= htmlspecialchars($k['klassekode']) ?></td>
-                <td><?= htmlspecialchars($k['klassenavn']) ?></td>
-                <td><?= htmlspecialchars($k['studiumkode']) ?></td>
-                <td>
-                    <form method="post" action="klasse.php"
-                          onsubmit="return confirm('Slette klassen «<?= htmlspecialchars($k['klassekode']) ?>»?');"
-                          style="display:inline">
-                        <input type="hidden" name="slett" value="<?= htmlspecialchars($k['klassekode']) ?>">
-                        <button type="submit" class="link">Slett</button>
-                    </form>
-                </td>
-            </tr>
-        <?php endforeach; ?>
+    <?php if (empty($klasser)): ?>
+      <tr><td colspan="4">Ingen klasser registrert ennå.</td></tr>
     <?php else: ?>
-        <tr><td colspan="4">Ingen klasser registrert ennå.</td></tr>
+      <?php foreach ($klasser as $k): ?>
+        <tr>
+          <td><?= htmlspecialchars($k['klassekode']) ?></td>
+          <td><?= htmlspecialchars($k['klassenavn']) ?></td>
+          <td><?= htmlspecialchars($k['studiumkode']) ?></td>
+          <td>
+            <a class="danger" href="?slett=<?= urlencode($k['klassekode']) ?>"
+               onclick="return confirm('Slette klassen «<?= htmlspecialchars($k['klassekode']) ?>»?');">
+               Slett
+            </a>
+          </td>
+        </tr>
+      <?php endforeach; ?>
     <?php endif; ?>
-</table>
-
+  </table>
 </body>
 </html>
