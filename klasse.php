@@ -1,44 +1,36 @@
 <?php
 // klasse.php – CRUD for tabellen "klasse"
-// - Registrer ny klasse (POST)
-// - Vis alle klasser (SELECT)
-// - Slett klasse (GET ?slett=KODE)
-// Bruker prepared statements og viser vennlige feilmeldinger.
+// Funksjoner: Registrering, visning og sletting
+// Nå med robust sletting (lenke peker eksplisitt til denne siden)
 
 require_once 'db_connection.php';
 
-$message = ""; // Meldingsfelt til UI
+$message = "";
 
 // =========================
 // 1) Registrering av klasse
 // =========================
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['registrer'])) {
-    // Les og trim input
     $kode    = trim($_POST['klassekode'] ?? '');
     $navn    = trim($_POST['klassenavn'] ?? '');
     $studium = trim($_POST['studiumkode'] ?? '');
 
     if ($kode !== '' && $navn !== '' && $studium !== '') {
-        // a) Sjekk om klassekode finnes allerede (unngå fatal "duplicate key")
+        // Sjekk om klassekode finnes allerede
         $chk = $conn->prepare("SELECT 1 FROM klasse WHERE klassekode = ?");
         $chk->bind_param("s", $kode);
         $chk->execute();
         $chk->store_result();
 
         if ($chk->num_rows > 0) {
-            // Finnes fra før
             $message = "⚠️ Klassekode «" . htmlspecialchars($kode) . "» finnes allerede.";
         } else {
-            // b) Sett inn ny rad
             $stmt = $conn->prepare("INSERT INTO klasse (klassekode, klassenavn, studiumkode) VALUES (?, ?, ?)");
             $stmt->bind_param("sss", $kode, $navn, $studium);
-
             if ($stmt->execute()) {
                 $message = "✅ Klasse «" . htmlspecialchars($kode) . "» ble registrert.";
-                // Tøm feltene i skjemaet etter vellykket registrering
-                $_POST['klassekode'] = $_POST['klassenavn'] = $_POST['studiumkode'] = '';
+                $_POST = []; // Tøm felter
             } else {
-                // Skulle det skje en feil, vises den på en trygg måte
                 if ($stmt->errno == 1062) {
                     $message = "⚠️ Klassekode «" . htmlspecialchars($kode) . "» finnes allerede.";
                 } else {
@@ -69,14 +61,13 @@ if (isset($_GET['slett'])) {
             $message = "⚠️ Fant ingen klasse med kode «" . htmlspecialchars($kode) . "».";
         }
     } else {
-        // Feiler ofte pga. fremmednøkkel hvis studenter peker på denne klassen
         $message = "⚠️ Kunne ikke slette klassen. Slett studenter i klassen først.";
     }
     $del->close();
 }
 
 // =========================
-// 3) Hent alle klasser (visning)
+// 3) Hent alle klasser
 // =========================
 $klasser = [];
 $res = $conn->query("SELECT klassekode, klassenavn, studiumkode FROM klasse ORDER BY klassekode");
@@ -87,7 +78,7 @@ if ($res) {
     $res->close();
 }
 
-// For repopulering av felter etter submit (hvis valideringsfeil)
+// For å vise verdier etter mislykket submit
 $valKode    = htmlspecialchars($_POST['klassekode'] ?? '', ENT_QUOTES);
 $valNavn    = htmlspecialchars($_POST['klassenavn'] ?? '', ENT_QUOTES);
 $valStudium = htmlspecialchars($_POST['studiumkode'] ?? '', ENT_QUOTES);
@@ -99,17 +90,17 @@ $valStudium = htmlspecialchars($_POST['studiumkode'] ?? '', ENT_QUOTES);
   <title>Klasser</title>
   <style>
     body { font-family: Arial, sans-serif; margin: 40px; color:#222; }
-    a { text-decoration: none; color: #5b21b6; }
+    a { text-decoration: none; color: #2563eb; }
     a:hover { text-decoration: underline; }
-    h1 { font-size: 42px; margin-bottom: 8px; }
+    h1 { font-size: 38px; margin-bottom: 8px; }
     h2 { margin-top: 28px; }
     .msg { margin: 12px 0 20px; }
-    .ok { color: #057a35; }
+    .ok { color: #047857; }
     .warn { color: #b91c1c; }
     label { display: block; margin: 10px 0 4px; font-weight: 600; }
     input[type="text"] { padding: 8px 10px; width: 280px; border:1px solid #ccc; border-radius:6px; }
-    button { margin-top: 12px; padding: 8px 14px; border:0; background:#111827; color:#fff; border-radius:6px; cursor:pointer; }
-    button:hover { background:#0b1220; }
+    button { margin-top: 12px; padding: 8px 14px; border:0; background:#1f2937; color:#fff; border-radius:6px; cursor:pointer; }
+    button:hover { background:#111827; }
     table { border-collapse: collapse; margin-top: 18px; min-width: 640px; }
     th, td { border: 1px solid #e5e7eb; padding: 10px 12px; }
     th { background: #f5f5f5; text-align: left; }
@@ -158,7 +149,8 @@ $valStudium = htmlspecialchars($_POST['studiumkode'] ?? '', ENT_QUOTES);
           <td><?= htmlspecialchars($k['klassenavn']) ?></td>
           <td><?= htmlspecialchars($k['studiumkode']) ?></td>
           <td>
-            <a class="danger" href="?slett=<?= urlencode($k['klassekode']) ?>"
+            <!-- Viktig: peker nå eksplisitt til klasse.php -->
+            <a class="danger" href="klasse.php?slett=<?= urlencode($k['klassekode']) ?>"
                onclick="return confirm('Slette klassen «<?= htmlspecialchars($k['klassekode']) ?>»?');">
                Slett
             </a>
