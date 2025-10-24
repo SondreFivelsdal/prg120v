@@ -1,7 +1,6 @@
 <?php
 // student.php – CRUD for tabellen "student"
 // Funksjoner: Registrer, vis og slett (sletting via POST)
-// Bruker prepared statements + vennlige feilmeldinger.
 
 require_once 'db_connection.php';
 
@@ -27,41 +26,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['registrer'])) {
     $klassekode = trim($_POST['klassekode'] ?? '');
 
     if ($brukernavn !== '' && $fornavn !== '' && $etternavn !== '' && $klassekode !== '') {
-        // sjekk at klassen finnes (unngå FK-feil)
+        // Sjekk at klassen finnes
         $chkK = $conn->prepare("SELECT 1 FROM klasse WHERE klassekode = ?");
         $chkK->bind_param("s", $klassekode);
         $chkK->execute();
         $chkK->store_result();
-        $klasseFinnes = $chkK->num_rows > 0;
+        $klasseFinnes = ($chkK->num_rows > 0);
         $chkK->close();
 
         if (!$klasseFinnes) {
             $message = "⚠️ Klassen «" . htmlspecialchars($klassekode) . "» finnes ikke.";
         } else {
-            // sjekk duplikat brukernavn
+            // Sjekk duplikat brukernavn
             $chk = $conn->prepare("SELECT 1 FROM student WHERE brukernavn = ?");
             $chk->bind_param("s", $brukernavn);
             $chk->execute();
             $chk->store_result();
+            $dupe = ($chk->num_rows > 0);
+            $chk->close();
 
-            if ($chk->num_rows > 0) {
+            if ($dupe) {
                 $message = "⚠️ Brukernavn «" . htmlspecialchars($brukernavn) . "» finnes allerede.";
             } else {
                 $stmt = $conn->prepare("INSERT INTO student (brukernavn, fornavn, etternavn, klassekode) VALUES (?, ?, ?, ?)");
                 $stmt->bind_param("ssss", $brukernavn, $fornavn, $etternavn, $klassekode);
                 if ($stmt->execute()) {
                     $message = "✅ Student «" . htmlspecialchars($brukernavn) . "» ble registrert.";
-                    $_POST = []; // tøm felter
+                    $_POST = []; // tøm felter etter OK
                 } else {
-                    if ($stmt->errno == 1062) {
-                        $message = "⚠️ Brukernavn «" . htmlspecialchars($brukernavn) . "» finnes allerede.";
-                    } else {
-                        $message = "⚠️ Feil ved registrering: (" . $stmt->errno . ") " . htmlspecialchars($stmt->error);
-                    }
+                    $message = "⚠️ Feil ved registrering: (" . $stmt->errno . ") " . htmlspecialchars($stmt->error);
                 }
                 $stmt->close();
             }
-            $chk->close();
         }
     } else {
         $message = "⚠️ Alle felter må fylles ut.";
@@ -84,7 +80,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['slett'])) {
             $message = "⚠️ Fant ingen student med brukernavn «" . htmlspecialchars($bn) . "».";
         }
     } else {
-        // Student har normalt ingen barn-tabeller, men vis feilmelding om noe annet feiler
         $message = "⚠️ Kunne ikke slette «" . htmlspecialchars($bn) . "»: (" . $del->errno . ") " . htmlspecialchars($del->error);
     }
     $del->close();
@@ -139,7 +134,7 @@ $valKl   = htmlspecialchars($_POST['klassekode'] ?? '', ENT_QUOTES);
   <p><a href="index.php">← Tilbake til meny</a></p>
 
   <?php if ($message): ?>
-    <div class="msg <?= str_starts_with(strip_tags($message), '✅') ? 'ok' : 'warn' ?>">
+    <div class="msg <?= (substr(strip_tags($message), 0, 2) === '✅') ? 'ok' : 'warn' ?>">
       <?= $message ?>
     </div>
   <?php endif; ?>
@@ -147,7 +142,7 @@ $valKl   = htmlspecialchars($_POST['klassekode'] ?? '', ENT_QUOTES);
   <h2>Registrer ny student</h2>
   <form method="post" action="student.php">
     <label for="brukernavn">Brukernavn:</label>
-    <input type="text" id="brukernavn" name="brukernavn" maxlength="7" value="<?= $valBn ?>" required />
+    <input type="text" id="brukernavn" name="brukernavn" maxlength="20" value="<?= $valBn ?>" required />
 
     <label for="fornavn">Fornavn:</label>
     <input type="text" id="fornavn" name="fornavn" maxlength="50" value="<?= $valFn ?>" required />
@@ -186,7 +181,6 @@ $valKl   = htmlspecialchars($_POST['klassekode'] ?? '', ENT_QUOTES);
           <td><?= htmlspecialchars($s['klassekode']) ?></td>
           <td><?= htmlspecialchars($s['klassenavn']) ?></td>
           <td>
-            <!-- Slettes via POST for robusthet -->
             <form method="post" action="student.php"
                   onsubmit="return confirm('Slette student «<?= htmlspecialchars($s['brukernavn']) ?>»?');"
                   style="display:inline">
