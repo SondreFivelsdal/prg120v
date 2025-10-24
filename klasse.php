@@ -63,7 +63,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['slett'])) {
       // Vennlig beskjed – ikke prøv å slette
       $message = "⚠️ Kan ikke slette «" . htmlspecialchars($kode) . "». "
                . "Det er registrert {$antStud} student" . ($antStud == 1 ? "" : "er")
-               . " i denne klassen. Gå til «Studenter» og slett/flytt dem først.";
+               . " i denne klassen.";
   } else {
       // b) Forsøk sletting
       $del = $conn->prepare("DELETE FROM klasse WHERE klassekode = ?");
