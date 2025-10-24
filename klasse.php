@@ -44,28 +44,51 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['registrer'])) {
     }
 }
 
+
 // =========================
 // 2) Sletting av klasse (POST)
 // =========================
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['slett'])) {
-    $kode = $_POST['slett'];
+  $kode = $_POST['slett'];
 
-    $del = $conn->prepare("DELETE FROM klasse WHERE klassekode = ?");
-    $del->bind_param("s", $kode);
+  // a) Sjekk om det finnes studenter i denne klassen
+  $cnt = $conn->prepare("SELECT COUNT(*) FROM student WHERE klassekode = ?");
+  $cnt->bind_param("s", $kode);
+  $cnt->execute();
+  $cnt->bind_result($antStud);
+  $cnt->fetch();
+  $cnt->close();
 
-    if ($del->execute()) {
-        if ($del->affected_rows > 0) {
-            $message = "🗑️ Klassen «" . htmlspecialchars($kode) . "» ble slettet.";
-        } else {
-            $message = "⚠️ Fant ingen klasse med kode «" . htmlspecialchars($kode) . "».";
-        }
-    } else {
-        // Vis konkret DB-feil (typisk fremmednøkkel)
-        $message = "⚠️ Kunne ikke slette «" . htmlspecialchars($kode) . "»: (" . $del->errno . ") " . htmlspecialchars($del->error) .
-                   "<br>Tips: Slett eventuelle studenter i denne klassen først.";
-    }
-    $del->close();
+  if ($antStud > 0) {
+      // Vennlig beskjed – ikke prøv å slette
+      $message = "⚠️ Kan ikke slette «" . htmlspecialchars($kode) . "». "
+               . "Det er registrert {$antStud} student" . ($antStud == 1 ? "" : "er")
+               . " i denne klassen. Gå til «Studenter» og slett/flytt dem først.";
+  } else {
+      // b) Forsøk sletting
+      $del = $conn->prepare("DELETE FROM klasse WHERE klassekode = ?");
+      $del->bind_param("s", $kode);
+
+      if ($del->execute()) {
+          if ($del->affected_rows > 0) {
+              $message = "🗑️ Klassen «" . htmlspecialchars($kode) . "» ble slettet.";
+          } else {
+              $message = "⚠️ Fant ingen klasse med kode «" . htmlspecialchars($kode) . "».";
+          }
+      } else {
+          // c) Fang FK-feil (1451 = row is referenced)
+          if ($del->errno == 1451) {
+              $message = "⚠️ Kan ikke slette «" . htmlspecialchars($kode) . "» fordi studenter peker på den. "
+                       . "Slett/flytt studentene først.";
+          } else {
+              $message = "⚠️ Kunne ikke slette «" . htmlspecialchars($kode) . "»: ("
+                       . $del->errno . ") " . htmlspecialchars($del->error);
+          }
+      }
+      $del->close();
+  }
 }
+
 
 // =========================
 // 3) Hent alle klasser
